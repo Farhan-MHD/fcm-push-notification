@@ -100,7 +100,18 @@ router.post("/send-notification", async (req, res) => {
 
     for (const token of tokens) {
       const payload = {
-        message: { notification: { title, body }, token },
+        message: {
+          notification: { title, body },
+          token,
+          android: {
+            priority: "HIGH", // 👈 Immediate delivery for Android
+          },
+          apns: {
+            headers: {
+              "apns-priority": "10", // 👈 Immediate delivery for iOS
+            },
+          },
+        },
       };
 
       const resp = await fetch(
@@ -141,7 +152,12 @@ router.post("/send-notification", async (req, res) => {
       }
     }
 
-    res.json({ success: true, counts: { sent: sent.length, failed: failed.length }, sent, failed });
+    res.json({
+      success: true,
+      counts: { sent: sent.length, failed: failed.length },
+      sent,
+      failed,
+    });
   } catch (err) {
     console.error("Error sending notification:", err);
     res.status(500).json({ success: false, error: err.message });
