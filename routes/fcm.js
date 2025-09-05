@@ -34,32 +34,28 @@ const db = admin.database();
 const router = express.Router();
 const projectId = serviceAccount.project_id;
 
-// Helper to create a safe key for RTDB
-const tokenKey = (t) => t.replace(/[.#$/\[\]]/g, "_");
+// Helper to encode email for Firebase path
+const encodeEmail = (email) => encodeURIComponent(email.replace(/[.#$/\[\]]/g, "_"));
 
-// Register a new FCM token -> store/update in RTDB
+// Register a new FCM token -> store/update in RTDB under tokens/encodedEmail
 router.post("/register-token", async (req, res) => {
   try {
-    const { token, uid } = req.body;
+    // if (!req.session?.auth || !req.session?.user?.email) {
+    //   return res.status(401).json({ success: false, error: "Unauthorized" });
+    // }
+    const { token } = req.body;
     if (!token) return res.status(400).json({ success: false, error: "token is required" });
 
-    const ref = db.ref("fcmTokens").child(tokenKey(token));
-    const snap = await ref.get();
+    const encodedEmail = "guest";
+    const ref = db.ref("tokens").child(encodedEmail);
 
-    if (snap.exists()) {
-      await ref.update({
-        token,
-        uid: uid ?? snap.val()?.uid ?? null,
-        lastSeenAt: admin.database.ServerValue.TIMESTAMP,
-      });
-    } else {
-      await ref.set({
-        token,
-        uid: uid ?? null,
-        createdAt: admin.database.ServerValue.TIMESTAMP,
-        lastSeenAt: admin.database.ServerValue.TIMESTAMP,
-      });
-    }
+    // Push new token object
+    const tokenObj = {
+      token,
+      createdAt: admin.database.ServerValue.TIMESTAMP,
+      lastSeenAt: admin.database.ServerValue.TIMESTAMP,
+    };
+    await ref.push(tokenObj);
 
     res.json({ success: true });
   } catch (e) {
@@ -68,9 +64,9 @@ router.post("/register-token", async (req, res) => {
   }
 });
 
-// Send notification -> read tokens from RTDB each time
+// Send notification -> get all tokens under tokens/* for all users
 router.post("/send-notification", async (req, res) => {
-  const { title, body, url } = req.body; // add url
+  const { title, body, url } = req.body;
 
   try {
     const auth = new GoogleAuth({
@@ -81,13 +77,15 @@ router.post("/send-notification", async (req, res) => {
     const access = await client.getAccessToken();
     const accessToken = typeof access === "string" ? access : access.token;
 
-    // Fetch tokens from RTDB
-    const snap = await db.ref("fcmTokens").get();
+    // Fetch all tokens for all users
+    const snap = await db.ref("tokens").get();
     const tokens = [];
     if (snap.exists()) {
-      snap.forEach((child) => {
-        const v = child.val();
-        if (v?.token) tokens.push(v.token);
+      snap.forEach((userSnap) => {
+        userSnap.forEach((tokenSnap) => {
+          const v = tokenSnap.val();
+          if (v?.token) tokens.push(v.token);
+        });
       });
     }
 
@@ -106,12 +104,8 @@ router.post("/send-notification", async (req, res) => {
         message: {
           notification: { title, body },
           token,
-          // Make link available to the SW/page
           data: { url: link },
-          // For web, also set link here so click opens it automatically
-          webpush: {
-            fcm_options: { link },
-          },
+          webpush: { fcm_options: { link } },
           android: { priority: "HIGH" },
           apns: { headers: { "apns-priority": "10" } },
         },
@@ -138,20 +132,6 @@ router.post("/send-notification", async (req, res) => {
         try { errJson = JSON.parse(text); } catch {}
         const msg = errJson?.error?.message || text;
         failed.push({ token, error: msg });
-
-        // Optional cleanup of invalid/unregistered tokens
-        const messageLower = String(msg).toLowerCase();
-        const shouldRemove =
-          resp.status === 404 ||
-          errJson?.error?.status === "NOT_FOUND" ||
-          errJson?.error?.status === "INVALID_ARGUMENT" ||
-          messageLower.includes("requested entity was not found") ||
-          messageLower.includes("not a valid fcm registration token") ||
-          messageLower.includes("unregistered");
-
-        if (shouldRemove) {
-          await db.ref("fcmTokens").child(tokenKey(token)).remove().catch(() => {});
-        }
       }
     }
 
