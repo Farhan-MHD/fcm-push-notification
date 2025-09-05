@@ -46,16 +46,16 @@ router.post("/register-token", async (req, res) => {
     const { token } = req.body;
     if (!token) return res.status(400).json({ success: false, error: "token is required" });
 
-    const encodedEmail = "guest";
-    const ref = db.ref("tokens").child(encodedEmail);
+    const encodedEmail = "guest"; // Replace with encodeEmail(req.session.user.email) for real auth
+    const ref = db.ref("tokens").child(encodedEmail).child(token);
 
-    // Push new token object
+    // Set or update token object (no duplicates)
     const tokenObj = {
       token,
       createdAt: admin.database.ServerValue.TIMESTAMP,
       lastSeenAt: admin.database.ServerValue.TIMESTAMP,
     };
-    await ref.push(tokenObj);
+    await ref.set(tokenObj);
 
     res.json({ success: true });
   } catch (e) {
