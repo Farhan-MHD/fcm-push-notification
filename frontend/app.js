@@ -50,12 +50,21 @@ document.getElementById('notifyBtn').addEventListener('click', async () => {
   await fetch('/send-notification', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title:  `Farhan's demo Application`, body: 'Hey iam Farhan! How are you?' }),
+    body: JSON.stringify({
+      title: `Farhan's demo Application`,
+      body: 'Hey iam Farhan! How are you?',
+      url: 'https://fcm-push-notification.onrender.com/' // your target URL
+    }),
   });
 });
 
 // Show notification when message is received in the foreground
 messaging.onMessage((payload) => {
   const { title, body } = payload.notification || {};
-  new Notification(title || "Notification", { body: body || "" });
+  const url =
+    (payload && payload.data && payload.data.url) ||
+    (payload && payload.fcmOptions && payload.fcmOptions.link) ||
+    'https://fcm-push-notification.onrender.com/';
+  const n = new Notification(title || "Notification", { body: body || "" });
+  n.onclick = () => window.open(url, '_blank');
 });

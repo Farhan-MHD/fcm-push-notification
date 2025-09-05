@@ -70,7 +70,7 @@ router.post("/register-token", async (req, res) => {
 
 // Send notification -> read tokens from RTDB each time
 router.post("/send-notification", async (req, res) => {
-  const { title, body } = req.body;
+  const { title, body, url } = req.body; // add url
 
   try {
     const auth = new GoogleAuth({
@@ -99,18 +99,21 @@ router.post("/send-notification", async (req, res) => {
     const failed = [];
 
     for (const token of tokens) {
+      const origin = `${req.protocol}://${req.get("host")}`;
+      const link = url || process.env.DEFAULT_NOTIFICATION_LINK || origin;
+
       const payload = {
         message: {
           notification: { title, body },
           token,
-          android: {
-            priority: "HIGH", // 👈 Immediate delivery for Android
+          // Make link available to the SW/page
+          data: { url: link },
+          // For web, also set link here so click opens it automatically
+          webpush: {
+            fcm_options: { link },
           },
-          apns: {
-            headers: {
-              "apns-priority": "10", // 👈 Immediate delivery for iOS
-            },
-          },
+          android: { priority: "HIGH" },
+          apns: { headers: { "apns-priority": "10" } },
         },
       };
 
